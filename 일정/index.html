@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Premium Mobile Calendar</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Day.js -->
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/ko.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            background-color: #f8fafc;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .animate-slide-up {
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .category-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body class="text-slate-900 overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        dayjs.locale('ko');
+
+        const CATEGORIES = [
+            { id: 'work', label: '업무', color: 'bg-blue-500', light: 'bg-blue-50', text: 'text-blue-600' },
+            { id: 'personal', label: '개인', color: 'bg-emerald-500', light: 'bg-emerald-50', text: 'text-emerald-600' },
+            { id: 'important', label: '중요', color: 'bg-rose-500', light: 'bg-rose-50', text: 'text-rose-600' },
+            { id: 'study', label: '학습', color: 'bg-amber-500', light: 'bg-amber-50', text: 'text-amber-600' },
+        ];
+
+        const App = () => {
+            const [currentDate, setCurrentDate] = useState(dayjs());
+            const [selectedDate, setSelectedDate] = useState(dayjs());
+            const [events, setEvents] = useState(() => {
+                const saved = localStorage.getItem('calendar_events');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [editingEvent, setEditingEvent] = useState(null);
+
+            useEffect(() => {
+                localStorage.setItem('calendar_events', JSON.stringify(events));
+            }, [events]);
+
+            const daysInMonth = useMemo(() => {
+                const startOfMonth = currentDate.startOf('month');
+                const startDay = startOfMonth.day();
+                const totalDays = startOfMonth.daysInMonth();
+                
+                const days = [];
+                // Fill previous month gaps
+                for (let i = 0; i < startDay; i++) {
+                    days.push({ 
+                        date: startOfMonth.subtract(startDay - i, 'day'),
+                        isCurrentMonth: false 
+                    });
+                }
+                // Fill current month
+                for (let i = 1; i <= totalDays; i++) {
+                    days.push({ 
+                        date: startOfMonth.date(i),
+                        isCurrentMonth: true 
+                    });
+                }
+                // Fill next month gaps
+                const remaining = 42 - days.length;
+                for (let i = 1; i <= remaining; i++) {
+                    days.push({ 
+                        date: startOfMonth.add(1, 'month').date(i),
+                        isCurrentMonth: false 
+                    });
+                }
+                return days;
+            }, [currentDate]);
+
+            const getEventsForDate = (date) => {
+                return events.filter(e => dayjs(e.date).isSame(date, 'day'));
+            };
+
+            const handleAddEvent = (eventData) => {
+                if (editingEvent) {
+                    setEvents(events.map(e => e.id === editingEvent.id ? { ...eventData, id: e.id } : e));
+                } else {
+                    setEvents([...events, { ...eventData, id: Date.now() }]);
+                }
+                setIsModalOpen(false);
+                setEditingEvent(null);
+            };
+
+            const handleDeleteEvent = (id) => {
+                setEvents(events.filter(e => e.id !== id));
+            };
+
+            const openEditModal = (event) => {
+                setEditingEvent(event);
+                setIsModalOpen(true);
+            };
+
+            return (
+                <div class="h-screen flex flex-col bg-slate-50 max-w-md mx-auto relative overflow-hidden shadow-2xl">
+                    {/* Header */}
+                    <header class="pt-10 pb-4 px-6 glass-card sticky top-0 z-20 flex items-center justify-between">
+                        <div>
+                            <h1 class="text-2xl font-bold text-slate-800">
+                                {currentDate.format('YYYY년 MM월')}
+                            </h1>
+                            <p class="text-sm text-slate-500 font-medium">오늘 {dayjs().format('M월 D일')}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onClick={() => setCurrentDate(currentDate.subtract(1, 'month'))} class="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <i data-lucide="chevron-left" class="w-6 h-6 text-slate-600"></i>
+                            </button>
+                            <button onClick={() => {setCurrentDate(dayjs()); setSelectedDate(dayjs())}} class="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <i data-lucide="calendar-days" class="w-6 h-6 text-slate-600"></i>
+                            </button>
+                            <button onClick={() => setCurrentDate(currentDate.add(1, 'month'))} class="p-2 rounded-full hover:bg-slate-100 transition-colors">
+                                <i data-lucide="chevron-right" class="w-6 h-6 text-slate-600"></i>
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Calendar View */}
+                    <div class="px-4 py-4 bg-white/50">
+                        <div class="calendar-grid mb-2">
+                            {['일', '월', '화', '수', '목', '금', '토'].map(d => (
+                                <div key={d} class="text-center text-xs font-bold text-slate-400 uppercase tracking-tighter py-2">{d}</div>
+                            ))}
+                        </div>
+                        <div class="calendar-grid gap-1">
+                            {daysInMonth.map(({ date, isCurrentMonth }, idx) => {
+                                const isSelected = selectedDate.isSame(date, 'day');
+                                const isToday = dayjs().isSame(date, 'day');
+                                const dateEvents = getEventsForDate(date);
+                                
+                                return (
+                                    <button 
+                                        key={idx}
+                                        onClick={() => setSelectedDate(date)}
+                                        class={`
+                                            relative h-14 rounded-2xl flex flex-col items-center justify-center transition-all duration-200
+                                            ${isCurrentMonth ? 'text-slate-800' : 'text-slate-300'}
+                                            ${isSelected ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105 z-10' : 'hover:bg-white'}
+                                            ${isToday && !isSelected ? 'text-blue-600 font-bold' : ''}
+                                        `}
+                                    >
+                                        <span class="text-sm font-semibold">{date.date()}</span>
+                                        <div class="flex gap-0.5 mt-1">
+                                            {dateEvents.slice(0, 3).map(e => (
+                                                <div key={e.id} class={`w-1 h-1 rounded-full ${isSelected ? 'bg-white/80' : CATEGORIES.find(c => c.id === e.category)?.color || 'bg-slate-400'}`}></div>
+                                            ))}
+                                            {dateEvents.length > 3 && <div class={`w-1 h-1 rounded-full ${isSelected ? 'bg-white/80' : 'bg-slate-300'}`}></div>}
+                                        </div>
+                                        {isToday && !isSelected && <div class="absolute bottom-1 w-1 h-1 bg-blue-600 rounded-full"></div>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Events for Selected Date */}
+                    <div class="flex-1 px-6 pt-6 overflow-y-auto no-scrollbar pb-24 bg-slate-50">
+                        <div class="flex items-center justify-between mb-6">
+                            <h2 class="text-lg font-bold text-slate-800">
+                                {selectedDate.format('M월 D일')} 일정
+                            </h2>
+                            <span class="text-xs font-bold text-slate-400 bg-slate-200/50 px-2 py-1 rounded-full">
+                                {getEventsForDate(selectedDate).length}건
+                            </span>
+                        </div>
+
+                        <div class="space-y-4">
+                            {getEventsForDate(selectedDate).length > 0 ? (
+                                getEventsForDate(selectedDate).map(event => {
+                                    const cat = CATEGORIES.find(c => c.id === event.category);
+                                    return (
+                                        <div 
+                                            key={event.id} 
+                                            class="p-4 rounded-3xl bg-white border border-slate-100 shadow-sm flex items-start justify-between group active:scale-[0.98] transition-transform"
+                                            onClick={() => openEditModal(event)}
+                                        >
+                                            <div class="flex items-start gap-4">
+                                                <div class={`w-3 h-3 rounded-full mt-1.5 ${cat?.color}`}></div>
+                                                <div>
+                                                    <h3 class="font-bold text-slate-800">{event.title}</h3>
+                                                    {event.time && <p class="text-xs text-slate-500 mt-1 font-medium italic">{event.time}</p>}
+                                                    {event.note && <p class="text-sm text-slate-600 mt-1 leading-relaxed line-clamp-2">{event.note}</p>}
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => {e.stopPropagation(); handleDeleteEvent(event.id);}}
+                                                class="opacity-0 group-hover:opacity-100 p-2 text-slate-300 hover:text-rose-500 transition-all"
+                                            >
+                                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                            </button>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div class="flex flex-col items-center justify-center py-12 opacity-30">
+                                    <i data-lucide="sparkles" class="w-12 h-12 mb-4"></i>
+                                    <p class="text-sm font-medium">일정이 없습니다</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* FAB */}
+                    <button 
+                        onClick={() => {setEditingEvent(null); setIsModalOpen(true);}}
+                        class="absolute bottom-8 right-8 w-14 h-14 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-xl shadow-slate-300 transform active:scale-90 transition-transform z-30"
+                    >
+                        <i data-lucide="plus" class="w-8 h-8"></i>
+                    </button>
+
+                    {/* Modal */}
+                    {isModalOpen && (
+                        <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
+                            <div class="w-full max-w-md bg-white rounded-t-[3rem] sm:rounded-[2.5rem] p-8 animate-slide-up shadow-2xl relative">
+                                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-8 sm:hidden"></div>
+                                <h3 class="text-2xl font-bold text-slate-800 mb-6">
+                                    {editingEvent ? '일정 수정' : '새 일정 추가'}
+                                </h3>
+                                
+                                <form onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const formData = new FormData(e.target);
+                                    handleAddEvent({
+                                        title: formData.get('title'),
+                                        note: formData.get('note'),
+                                        category: formData.get('category'),
+                                        time: formData.get('time'),
+                                        date: selectedDate.toISOString(),
+                                    });
+                                }} class="space-y-6">
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">제목</label>
+                                        <input 
+                                            name="title" 
+                                            type="text" 
+                                            defaultValue={editingEvent?.title}
+                                            required 
+                                            autoFocus
+                                            placeholder="일정 제목을 입력하세요"
+                                            class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-slate-900 transition-all font-medium"
+                                        />
+                                    </div>
+                                    
+                                    <div class="flex gap-4">
+                                        <div class="flex-1 space-y-2">
+                                            <label class="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">시간</label>
+                                            <input 
+                                                name="time" 
+                                                type="time" 
+                                                defaultValue={editingEvent?.time}
+                                                class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-slate-900 transition-all font-medium"
+                                            />
+                                        </div>
+                                        <div class="flex-1 space-y-2">
+                                            <label class="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">카테고리</label>
+                                            <select 
+                                                name="category" 
+                                                defaultValue={editingEvent?.category || 'work'}
+                                                class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-slate-900 transition-all font-medium appearance-none"
+                                            >
+                                                {CATEGORIES.map(c => (
+                                                    <option key={c.id} value={c.id}>{c.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">메모</label>
+                                        <textarea 
+                                            name="note" 
+                                            defaultValue={editingEvent?.note}
+                                            rows="3"
+                                            placeholder="세부 사항을 적어주세요 (선택)"
+                                            class="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-slate-900 transition-all resize-none font-medium"
+                                        ></textarea>
+                                    </div>
+
+                                    <div class="flex gap-3 pt-2">
+                                        <button 
+                                            type="button"
+                                            onClick={() => {setIsModalOpen(false); setEditingEvent(null);}}
+                                            class="flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-2xl transition-colors"
+                                        >
+                                            취소
+                                        </button>
+                                        <button 
+                                            type="submit"
+                                            class="flex-[2] py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl shadow-slate-200 active:scale-95 transition-all"
+                                        >
+                                            저장하기
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Initialize Lucide icons on every render update (simple approach for UMD)
+        setInterval(() => lucide.createIcons(), 500);
+    </script>
+</body>
+</html>
